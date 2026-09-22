@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Aaron's Torn PDA Pickpocket Helper [TEST]
 // @namespace    aaron-torn-pda-pickpocket
-// @version      1.0.0-test.2
+// @version      1.0.0-test.3
 // @description  Manual pickpocket helper with a clearly marked test-only Auto Pick option
 // @match        https://www.torn.com/*
 // @match        https://torn.com/*
@@ -39,6 +39,7 @@
         ADMIN_HASH: 'aaron_pp_v1_admin_hash',
         ADMIN_SALT: 'aaron_pp_v1_admin_salt',
         ADMIN_ENABLED: 'aaron_pp_v1_admin_enabled',
+        ALWAYS_VISIBLE: 'aaron_pp_v1_always_visible',
         SCAN_INTERVAL: 'aaron_pp_v1_scan_interval',
         PAUSE_MINIMIZED: 'aaron_pp_v1_pause_minimized'
     };
@@ -174,6 +175,10 @@
 
     function isAdminMode() {
         return readStorage(STORAGE.ADMIN_ENABLED, 'false') === 'true';
+    }
+
+    function isAlwaysVisible() {
+        return readStorage(STORAGE.ALWAYS_VISIBLE, 'false') === 'true';
     }
 
     function disableAdminMode() {
@@ -602,7 +607,7 @@
     }
 
     function scheduleAutoPick() {
-        if (!autoPickEnabled || !isAdminMode() || !isScanWanted() || isMinimized() || actionBusy) return;
+        if (!isPickpocketPage() || !autoPickEnabled || !isAdminMode() || !isScanWanted() || isMinimized() || actionBusy) return;
         stopTimers();
         const delay = randomAutoDelay();
         const finishAt = Date.now() + delay;
@@ -669,6 +674,11 @@
 
     function performPick(automatic) {
         if (actionBusy || isMinimized()) return;
+        if (!isPickpocketPage()) {
+            if (automatic) stopAutoPick();
+            setStatus('Open Pickpocketing to scan');
+            return;
+        }
         if (automatic && !isAdminMode()) {
             stopAutoPick('Admin Mode required');
             return;
@@ -703,26 +713,34 @@
         const scan = document.getElementById('aaron-pp-test-scan');
         const skillButton = document.getElementById('aaron-pp-test-skill');
         const checkbox = document.getElementById('aaron-pp-test-auto');
+        const alwaysVisible = document.getElementById('aaron-pp-test-always-visible');
         const adminTab = document.getElementById('aaron-pp-test-tab-admin');
         const labTab = document.getElementById('aaron-pp-test-tab-lab');
         const tabBar = document.getElementById('aaron-pp-test-tab-bar');
         const version = document.getElementById('aaron-pp-test-version');
         if (scan) {
             const enabled = isScanWanted();
-            scan.textContent = (enabled ? 'SCAN ON' : 'SCAN OFF') + ' • ' + getMode();
-            scan.style.background = enabled ? '#267c3b' : '#555';
+            const onPickpocketPage = isPickpocketPage();
+            scan.disabled = !onPickpocketPage;
+            scan.textContent = onPickpocketPage ? (enabled ? 'SCAN ON' : 'SCAN OFF') + ' • ' + getMode() : 'SCAN UNAVAILABLE';
+            scan.style.background = onPickpocketPage && enabled ? '#267c3b' : '#555';
+            scan.style.opacity = onPickpocketPage ? '1' : '.45';
         }
         if (skillButton) {
             const state = getSkillState();
             if (state.value === null) skillButton.textContent = 'CS AUTO ?';
             else skillButton.textContent = 'CS ' + state.source + ' ' + state.value;
         }
-        if (checkbox) checkbox.checked = autoPickEnabled;
+        if (checkbox) {
+            checkbox.checked = autoPickEnabled;
+            checkbox.disabled = !isPickpocketPage();
+        }
+        if (alwaysVisible) alwaysVisible.checked = isAlwaysVisible();
         if (adminTab) adminTab.style.display = isAdminMode() ? 'block' : 'none';
         if (labTab) labTab.style.display = isAdminMode() ? 'block' : 'none';
         if (tabBar) tabBar.style.gridTemplateColumns = isAdminMode() ? 'repeat(4,1fr)' : 'repeat(2,1fr)';
         if (version) {
-            version.textContent = isAdminMode() ? 'v1.0.0-test.1 • ADMIN ACTIVE' : 'v1.0.0-test.1 • HOLD FOR ADMIN';
+            version.textContent = isAdminMode() ? 'v1.0.0-test.3 • ADMIN ACTIVE' : 'v1.0.0-test.3 • HOLD FOR ADMIN';
             version.style.color = isAdminMode() ? '#ffbf84' : '#777';
         }
 
@@ -753,7 +771,17 @@
 
     function scanTargets(force) {
         if (!isPickpocketPage()) {
-            removeInterface();
+            stopAutoPick();
+            clearMarkedRows();
+            currentBest = null;
+            if (!isAlwaysVisible()) {
+                removeInterface();
+                return;
+            }
+            ensureInterface();
+            updateControls();
+            updatePickButton();
+            setStatus('Open Pickpocketing to scan');
             return;
         }
 
@@ -841,7 +869,7 @@
         const outcome = findOutcomeElement();
         return {
             report: 'Aaron Torn PDA Pickpocket Helper diagnostics',
-            scriptVersion: '1.0.0-test.2',
+            scriptVersion: '1.0.0-test.3',
             generatedAt: new Date().toISOString(),
             page: {
                 origin: location.origin,
@@ -855,7 +883,8 @@
                 scanEnabled: isScanWanted(),
                 scanIntervalMs: getScanInterval(),
                 minimized: isMinimized(),
-                pauseWhenMinimized: pauseWhenMinimized()
+                pauseWhenMinimized: pauseWhenMinimized(),
+                alwaysVisible: isAlwaysVisible()
             },
             admin: {
                 enabled: isAdminMode(),
@@ -1090,6 +1119,10 @@
                     <input id="aaron-pp-test-auto" type="checkbox" style="width:20px;height:20px;accent-color:#e34848;">
                     AUTO PICK — TEST ONLY
                 </label>
+                <label style="display:flex;align-items:center;gap:8px;margin-bottom:7px;padding:9px;border-radius:9px;background:#292929;color:#fff;font-size:10px;font-weight:900;">
+                    <input id="aaron-pp-test-always-visible" type="checkbox" style="width:20px;height:20px;accent-color:#67469b;">
+                    KEEP HELPER VISIBLE ON ALL TORN PAGES
+                </label>
                 <button id="aaron-pp-test-copy-diagnostics" type="button" style="width:100%;min-height:43px;margin-bottom:7px;border:0;border-radius:9px;background:#315b78;color:#fff;font-size:11px;font-weight:900;">COPY DIAGNOSTIC DATA</button>
                 <button id="aaron-pp-test-disable-admin" type="button" style="width:100%;min-height:43px;border:0;border-radius:9px;background:#8f2f2f;color:#fff;font-size:11px;font-weight:900;">DISABLE ADMIN MODE</button>
             </div>
@@ -1120,7 +1153,7 @@
                 </label>
                 <button id="aaron-pp-setting-reset" type="button" style="width:100%;min-height:40px;border:0;border-radius:9px;background:#555;color:#fff;font-size:10px;font-weight:900;">RESET HELPER SETTINGS</button>
             </div>
-            <button id="aaron-pp-test-version" type="button" style="display:block;width:100%;margin-top:6px;border:0;background:transparent;text-align:center;color:#777;font-size:8px;font-weight:800;touch-action:manipulation;">v1.0.0-test.1 • HOLD FOR ADMIN</button>
+            <button id="aaron-pp-test-version" type="button" style="display:block;width:100%;margin-top:6px;border:0;background:transparent;text-align:center;color:#777;font-size:8px;font-weight:800;touch-action:manipulation;">v1.0.0-test.3 • HOLD FOR ADMIN</button>
         `;
         document.body.appendChild(panel);
 
@@ -1153,6 +1186,10 @@
             }
         });
         panel.querySelector('#aaron-pp-test-copy-diagnostics').addEventListener('click', copyDiagnostics);
+        panel.querySelector('#aaron-pp-test-always-visible').addEventListener('change', event => {
+            writeStorage(STORAGE.ALWAYS_VISIBLE, event.target.checked);
+            setStatus(event.target.checked ? 'Helper will stay visible across Torn' : 'Helper limited to Pickpocketing');
+        });
         panel.querySelector('#aaron-pp-test-disable-admin').addEventListener('click', disableAdminMode);
         panel.querySelector('#aaron-pp-setting-mode').addEventListener('change', event => setMode(event.target.value));
         panel.querySelector('#aaron-pp-setting-skill-source').addEventListener('change', event => {
@@ -1186,7 +1223,7 @@
             stopAutoPick();
             [STORAGE.MODE, STORAGE.SCAN, STORAGE.MINIMIZED, STORAGE.SKILL_SOURCE,
                 STORAGE.MANUAL_SKILL, STORAGE.LAST_AUTO_SKILL, STORAGE.SCAN_INTERVAL,
-                STORAGE.PAUSE_MINIMIZED].forEach(removeStorage);
+                STORAGE.PAUSE_MINIMIZED, STORAGE.ALWAYS_VISIBLE].forEach(removeStorage);
             restartScanLoop();
             updateControls();
             scanTargets(true);
